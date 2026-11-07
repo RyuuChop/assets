@@ -24,6 +24,10 @@ class ChessAudio {
     this.soundEnabled = val;
   }
 
+  public setMuted(muted: boolean) {
+    this.soundEnabled = !muted;
+  }
+
   public isEnabled(): boolean {
     return this.soundEnabled;
   }
