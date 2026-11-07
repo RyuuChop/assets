@@ -10,11 +10,14 @@
     "preview": "vite preview --port 3000 --host 0.0.0.0"
   },
   "dependencies": {
+    "@react-three/drei": "^9.121.5",
+    "@react-three/fiber": "^8.17.14",
     "chess.js": "^1.0.0-beta.9",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "three": "^0.173.0"
+    "three": "^0.173.0",
+    "three-stdlib": "^2.35.13"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",
