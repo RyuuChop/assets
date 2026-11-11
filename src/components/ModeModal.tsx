@@ -1,7 +1,7 @@
 import { AI_LEVEL_DESCRIPTIONS } from '../ai/chessAI';
 import { useState } from 'react';
 import { Chess } from 'chess.js';
-import { Crown, Swords, Bot, Shuffle, Play, X } from 'lucide-react';
+import { Crown, Swords, Bot, Shuffle, Play, X, Sparkles } from 'lucide-react';
 import { AppMode, AIDifficulty, PlayerColorChoice } from '../types/chess';
 
 /* =========================================================================
@@ -106,13 +106,14 @@ export function ModeModal({
                 <button
                   key={d}
                   onClick={() => setDiff(d)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-semibold capitalize transition ${
+                  className={`py-2 px-2.5 rounded-xl border text-xs font-semibold capitalize transition flex items-center justify-center space-x-1 ${
                     diff === d
                       ? 'bg-amber-500 text-neutral-950 border-amber-400 shadow-md shadow-amber-500/20'
                       : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700'
                   }`}
                 >
-                  {d}
+                  <span>{d}</span>
+                  {d === 'extreme' && <Sparkles className="w-3 h-3 text-amber-300" />}
                 </button>
               ))}
             </div>

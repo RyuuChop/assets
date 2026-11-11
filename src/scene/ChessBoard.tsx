@@ -1,13 +1,22 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { useFrame, useThree } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import { BoardStyleConfig } from '../config/themes';
 import { SQUARE, TILE_SURFACE_Y, TILE_THICKNESS } from './constants';
 import { squareToCoords } from './animationUtils';
 
 /* =========================================================================
-   7. CUSTOMIZABLE CHESSBOARD (8x8 CHECKER GRID WITH MEMOIZED TILES)
+   FRAME TOP Y & FRAME BAND GEOMETRY
+   Frame box: position [0, -0.12, 0], height 0.32 -> top face is at y = 0.04.
+   Frame band is between tile edge (6.4) and frame outer edge (7.65) -> center = 7.025.
    ========================================================================= */
+
+const FRAME_MESH_Y = -0.12;
+const FRAME_BOX_HEIGHT = 0.32;
+const FRAME_TOP_Y = FRAME_MESH_Y + FRAME_BOX_HEIGHT / 2 + 0.003; // ~0.043, resting flat on frame top
+
+const FRAME_BAND_OFFSET = (6.4 + 7.65) / 2; // 7.025
 
 export interface BoardProps {
   boardConfig: BoardStyleConfig;
@@ -43,6 +52,20 @@ export const CustomizableChessBoard = React.memo(function CustomizableChessBoard
   onTilePointerOver,
   onTilePointerOut,
 }: BoardProps) {
+  const { camera, invalidate } = useThree();
+  const [isBlackSide, setIsBlackSide] = useState<boolean>(false);
+  const isBlackSideRef = useRef<boolean>(false);
+
+  // Detect camera side (White side vs Black side) and flip text so it remains upright
+  useFrame(() => {
+    const blackSide = camera.position.z < 0;
+    if (blackSide !== isBlackSideRef.current) {
+      isBlackSideRef.current = blackSide;
+      setIsBlackSide(blackSide);
+      invalidate();
+    }
+  });
+
   const tileGeometry = useMemo(
     () => new THREE.BoxGeometry(SQUARE * 0.995, TILE_THICKNESS, SQUARE * 0.995),
     []
@@ -151,20 +174,26 @@ export const CustomizableChessBoard = React.memo(function CustomizableChessBoard
     return list;
   }, []);
 
+  // Place files a-h and ranks 1-8 centered exactly on each column/row on the frame band
   const coordinateLabels = useMemo(() => {
-    const labels = [];
+    const labels: { text: string; x: number; z: number }[] = [];
+
+    // Files a-h (letters) on top and bottom frame bands
     for (let f = 0; f < 8; f++) {
       const char = String.fromCharCode(97 + f);
       const x = (f - 3.5) * SQUARE;
-      labels.push({ text: char, x, z: 6.85, rot: -Math.PI / 2 });
-      labels.push({ text: char, x, z: -6.85, rot: -Math.PI / 2 });
+      labels.push({ text: char, x, z: FRAME_BAND_OFFSET }); // White side
+      labels.push({ text: char, x, z: -FRAME_BAND_OFFSET }); // Black side
     }
+
+    // Ranks 1-8 (numbers) on left and right frame bands
     for (let r = 1; r <= 8; r++) {
       const char = String(r);
       const z = (8 - r - 3.5) * SQUARE;
-      labels.push({ text: char, x: -6.85, z, rot: -Math.PI / 2 });
-      labels.push({ text: char, x: 6.85, z, rot: -Math.PI / 2 });
+      labels.push({ text: char, x: -FRAME_BAND_OFFSET, z }); // Left side
+      labels.push({ text: char, x: FRAME_BAND_OFFSET, z }); // Right side
     }
+
     return labels;
   }, []);
 
@@ -172,6 +201,8 @@ export const CustomizableChessBoard = React.memo(function CustomizableChessBoard
     () => (selectedSquare ? squareToCoords(selectedSquare) : null),
     [selectedSquare]
   );
+
+  const textRotationY = isBlackSide ? Math.PI : 0;
 
   return (
     <group>
@@ -266,8 +297,7 @@ export const CustomizableChessBoard = React.memo(function CustomizableChessBoard
           );
         })}
 
-      {/* Inlay sits just BELOW the tile top (top face = TILE_SURFACE_Y - 0.0125) so it only
-          shows as a thin border ring and in the hairline gaps between tiles, never over them. */}
+      {/* Inlay sits just BELOW the tile top so it only shows as border ring & hairline gaps */}
       <mesh position={[0, TILE_SURFACE_Y - 0.02, 0]} material={materials.brassInlay}>
         <boxGeometry args={[12.94, 0.015, 12.94]} />
       </mesh>
@@ -279,14 +309,26 @@ export const CustomizableChessBoard = React.memo(function CustomizableChessBoard
         <boxGeometry args={[15.7, 0.12, 15.7]} />
       </mesh>
 
+      {/* Captured piece tray rails (left for black pieces, right for white pieces) */}
+      <mesh position={[-9.4, -0.12, 0.7]} material={materials.frame} receiveShadow castShadow>
+        <boxGeometry args={[2.6, 0.32, 12.8]} />
+      </mesh>
+      <mesh position={[9.4, -0.12, 0.7]} material={materials.frame} receiveShadow castShadow>
+        <boxGeometry args={[2.6, 0.32, 12.8]} />
+      </mesh>
+
+      {/* Coordinates: flat on frame top, high contrast, orientation follows camera */}
       {showCoordinates &&
         coordinateLabels.map((item, idx) => (
           <Text
             key={`coord-${idx}`}
-            position={[item.x, TILE_SURFACE_Y + 0.01, item.z]}
-            rotation={[item.rot, 0, 0]}
-            fontSize={0.32}
-            color="#d4b483"
+            position={[item.x, FRAME_TOP_Y, item.z]}
+            rotation={[-Math.PI / 2, 0, textRotationY]}
+            fontSize={0.45}
+            fontWeight="bold"
+            color="#f5e6c8"
+            outlineWidth={0.05}
+            outlineColor="#1a1410"
             anchorX="center"
             anchorY="middle"
           >

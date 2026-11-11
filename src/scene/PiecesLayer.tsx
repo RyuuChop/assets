@@ -12,7 +12,6 @@ import { ActivePiece, Piece } from './Piece';
 export interface PiecesLayerProps {
   modelSet: DiscoveredModelSet;
   theme: ChessTheme;
-  useOriginalMaterials: boolean;
   pieceColors?: PieceColorOverrides;
   /** User-chosen knight yaw (radians) for the active set; undefined = use the set's own default */
   knightYawOverride?: number;
@@ -28,7 +27,6 @@ export interface PiecesLayerProps {
 export function PiecesLayer({
   modelSet,
   theme,
-  useOriginalMaterials,
   pieceColors,
   knightYawOverride,
   pieces,
@@ -159,7 +157,6 @@ export function PiecesLayer({
           template={templates[piece.type]}
           whiteMaterial={whiteMaterial}
           blackMaterial={blackMaterial}
-          useOriginalMaterials={useOriginalMaterials}
           isSelected={selectedSquare === piece.square}
           overrides={
             modelSet.fallbackToDefaultTypes?.includes(piece.type as 'p' | 'r' | 'n' | 'b' | 'q' | 'k')

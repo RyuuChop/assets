@@ -66,7 +66,7 @@ export const AI_LEVEL_DESCRIPTIONS: Record<AIDifficulty, string> = {
   easy: 'Easy: casual opponent. Looks one move ahead and sometimes blunders.',
   medium: 'Medium: thinks a few moves ahead, occasional inaccuracies.',
   hard: 'Hard: deep search with tactics, endgame knowledge and an opening book.',
-  extreme: 'Extreme: maximum strength. Very deep search, rarely makes a mistake, varies its play.',
+  extreme: 'Extreme: Grandmaster level powered by Gemini AI. Sharp tactical calculation and commentary.',
 };
 
 /* =============================================================================

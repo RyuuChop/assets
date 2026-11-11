@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { SkeletonUtils } from 'three-stdlib';
 import { ModelOverrides } from '../config/themes';
-import { TILE_SURFACE_Y } from './constants';
+import { TILE_SURFACE_Y, FRAME_TOP_Y } from './constants';
 import { easeInOutCubic } from './animationUtils';
 
 /* =========================================================================
@@ -26,6 +26,10 @@ export interface ActivePiece {
   isFading?: boolean;
   fadeStartTime?: number;
   fadeDuration?: number;
+  captured?: boolean;
+  trayIndex?: number;
+  fromScale?: number;
+  targetScale?: number;
 }
 
 export interface PieceProps {
@@ -33,7 +37,6 @@ export interface PieceProps {
   template?: THREE.Group;
   whiteMaterial: THREE.Material;
   blackMaterial: THREE.Material;
-  useOriginalMaterials: boolean;
   isSelected: boolean;
   overrides?: ModelOverrides;
   onPieceClick: (piece: ActivePiece, e: any) => void;
@@ -48,7 +51,6 @@ export const Piece = React.memo(function Piece({
   template,
   whiteMaterial,
   blackMaterial,
-  useOriginalMaterials,
   isSelected,
   overrides,
   onPieceClick,
@@ -64,19 +66,17 @@ export const Piece = React.memo(function Piece({
   const pieceObject = useMemo(() => {
     if (!template) return null;
     const clone = SkeletonUtils.clone(template) as THREE.Group;
-    if (!useOriginalMaterials) {
-      const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
-      clone.traverse((child) => {
-        if ((child as THREE.Mesh).isMesh) {
-          const mesh = child as THREE.Mesh;
-          mesh.material = mat;
-          mesh.castShadow = true;
-          mesh.receiveShadow = true;
-        }
-      });
-    }
+    const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh = child as THREE.Mesh;
+        mesh.material = mat;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+      }
+    });
     return clone;
-  }, [template, piece.color, whiteMaterial, blackMaterial, useOriginalMaterials]);
+  }, [template, piece.color, whiteMaterial, blackMaterial]);
 
   const knightOffset = overrides?.knightYawOffset ?? Math.PI / 2;
   const baseYaw = overrides?.baseYaw ?? 0;
@@ -103,6 +103,11 @@ export const Piece = React.memo(function Piece({
       delta
     );
 
+    const targetBaseScale = piece.captured ? (piece.targetScale ?? 0.65) : 1.0;
+    const startBaseScale = piece.fromScale !== undefined ? piece.fromScale : 1.0;
+    const startSurfaceY = TILE_SURFACE_Y;
+    const endSurfaceY = piece.captured ? FRAME_TOP_Y : TILE_SURFACE_Y;
+
     if (piece.animating && piece.fromX !== undefined && piece.fromZ !== undefined && piece.animStartTime) {
       const elapsed = now - piece.animStartTime;
       const duration = piece.animDuration || 520;
@@ -111,14 +116,17 @@ export const Piece = React.memo(function Piece({
 
       const curX = THREE.MathUtils.lerp(piece.fromX, piece.toX, t);
       const curZ = THREE.MathUtils.lerp(piece.fromZ, piece.toZ, t);
+      const curSurfaceY = THREE.MathUtils.lerp(startSurfaceY, endSurfaceY, t);
       const arc = Math.sin(t * Math.PI) * (piece.arcHeight || 0.55);
+      const currentScale = THREE.MathUtils.lerp(startBaseScale, targetBaseScale, t) * themeBloomScaleRef.current;
 
-      group.position.set(curX, TILE_SURFACE_Y + currentLiftRef.current + arc, curZ);
-      group.scale.setScalar(themeBloomScaleRef.current);
+      group.position.set(curX, curSurfaceY + currentLiftRef.current + arc, curZ);
+      group.scale.setScalar(currentScale);
 
       if (progress >= 1) {
         piece.animating = false;
-        group.position.set(piece.toX, TILE_SURFACE_Y + currentLiftRef.current, piece.toZ);
+        group.position.set(piece.toX, endSurfaceY + currentLiftRef.current, piece.toZ);
+        group.scale.setScalar(targetBaseScale * themeBloomScaleRef.current);
         onAnimationComplete(piece.id);
       }
     } else if (piece.isFading && piece.fadeStartTime) {
@@ -134,8 +142,8 @@ export const Piece = React.memo(function Piece({
         onFadeComplete(piece.id);
       }
     } else {
-      group.position.set(piece.toX, TILE_SURFACE_Y + currentLiftRef.current, piece.toZ);
-      group.scale.setScalar(themeBloomScaleRef.current);
+      group.position.set(piece.toX, endSurfaceY + currentLiftRef.current, piece.toZ);
+      group.scale.setScalar(targetBaseScale * themeBloomScaleRef.current);
     }
   });
 
@@ -144,16 +152,16 @@ export const Piece = React.memo(function Piece({
   return (
     <group
       ref={groupRef}
-      position={[piece.toX, TILE_SURFACE_Y, piece.toZ]}
-      onClick={(e) => {
+      position={[piece.toX, piece.captured ? FRAME_TOP_Y : TILE_SURFACE_Y, piece.toZ]}
+      onClick={piece.captured ? undefined : (e) => {
         e.stopPropagation();
         onPieceClick(piece, e);
       }}
-      onPointerEnter={(e) => {
+      onPointerEnter={piece.captured ? undefined : (e) => {
         e.stopPropagation();
         onPointerEnter(piece);
       }}
-      onPointerLeave={(e) => {
+      onPointerLeave={piece.captured ? undefined : (e) => {
         e.stopPropagation();
         onPointerLeave();
       }}

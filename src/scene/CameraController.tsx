@@ -136,7 +136,7 @@ export function CameraController({
       makeDefault
       enableDamping={false} // no inertia: the camera stops exactly when you let go
       minDistance={8}
-      maxDistance={30}
+      maxDistance={34}
       maxPolarAngle={Math.PI / 2.05}
       enabled={cameraMode === 'free' && !transitionRef.current}
       autoRotate={autoRotate}

@@ -3,18 +3,20 @@ import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { useGLTF, OrbitControls, Environment, ContactShadows, AdaptiveDpr } from '@react-three/drei';
 import { Chess, Square } from 'chess.js';
-import { RotateCcw, Sparkles, RefreshCw, Crown, Volume2, VolumeX, Swords, Bot, Trophy, Play, RotateCw, X, Palette, Sun, Moon, Sunrise, Check, Camera, Compass, Lock, Unlock, PlusCircle, Box, Layers, Lightbulb } from 'lucide-react';
+import { RotateCcw, Sparkles, RefreshCw, Crown, Volume2, VolumeX, Swords, Bot, Trophy, Play, RotateCw, X, Palette, Sun, Moon, Sunrise, Check, Camera, Compass, Lock, Unlock, PlusCircle, Box, Lightbulb } from 'lucide-react';
 import { chessAudio } from './utils/chessAudio';
 import { getAIMove } from './utils/chessEngine';
 import { AppMode, AIDifficulty, PlayerColorChoice, GameOverState } from './types/chess';
 import { THEMES, BOARD_PRESETS, ENVIRONMENT_PRESETS, ChessTheme, BoardStyleConfig, EnvironmentPresetKey, DISCOVERED_MODEL_SETS, findModelSet, DiscoveredModelSet, PieceColorOverrides, resolvePieceModelPath } from './config/themes';
 import { squareToCoords } from './scene/animationUtils';
+import { getTraySlotCoords } from './scene/constants';
 import { loadPersistedSettings, savePersistedSettings } from './utils/persistedSettings';
 import { ActivePiece, Piece } from './scene/Piece';
 import { PiecesLayer } from './scene/PiecesLayer';
 import { CustomizableChessBoard } from './scene/ChessBoard';
 import { CameraController, CameraTransitionRequest, DemandFramePacer } from './scene/CameraController';
 import { ModeModal } from './components/ModeModal';
+import { GeminiChatModal } from './components/GeminiChatModal';
 
 // Re-exports keep every previous `import ... from './App'` working.
 export { ErrorBoundary } from './components/ErrorBoundary';
@@ -51,10 +53,6 @@ export default function App() {
     [activeModelSetId]
   );
 
-  const [useOriginalMaterials, setUseOriginalMaterials] = useState<boolean>(
-    initialSettings?.useOriginalMaterials ?? false
-  );
-
   const [boardConfig, setBoardConfig] = useState<BoardStyleConfig>(
     initialSettings?.board || activeTheme.board
   );
@@ -84,6 +82,7 @@ export default function App() {
   );
 
   const [showThemeDrawer, setShowThemeDrawer] = useState<boolean>(false);
+  const [showGeminiChat, setShowGeminiChat] = useState<boolean>(false);
 
   // Camera Settings
   const [cameraMode, setCameraMode] = useState<'free' | 'locked'>(
@@ -122,7 +121,6 @@ export default function App() {
     savePersistedSettings({
       themeId: activeThemeId,
       modelSetId: activeModelSetId,
-      useOriginalMaterials,
       board: boardConfig,
       envPreset: envPresetKey,
       showCoordinates,
@@ -138,7 +136,6 @@ export default function App() {
   }, [
     activeThemeId,
     activeModelSetId,
-    useOriginalMaterials,
     boardConfig,
     envPresetKey,
     showCoordinates,
@@ -205,6 +202,27 @@ export default function App() {
   const [hoveredSquare, setHoveredSquare] = useState<string | null>(null);
   const [lastMove, setLastMove] = useState<{ from: string; to: string } | null>(null);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
+
+  const hoveredReadout = useMemo(() => {
+    if (!hoveredSquare) return '--';
+    try {
+      const piece = chess.get(hoveredSquare as Square);
+      if (!piece) return hoveredSquare;
+      const pieceNames: Record<string, string> = {
+        p: 'Pawn',
+        n: 'Knight',
+        b: 'Bishop',
+        r: 'Rook',
+        q: 'Queen',
+        k: 'King',
+      };
+      const colorName = piece.color === 'w' ? 'White' : 'Black';
+      const typeName = pieceNames[piece.type] || piece.type.toUpperCase();
+      return `${hoveredSquare} - ${colorName} ${typeName}`;
+    } catch {
+      return hoveredSquare;
+    }
+  }, [hoveredSquare, chess, moveHistory]);
   const [isAIThinking, setIsAIThinking] = useState<boolean>(false);
   const [gameOver, setGameOver] = useState<GameOverState>({
     isOver: false,
@@ -323,6 +341,30 @@ export default function App() {
         }
       }
     }
+
+    // Append captured pieces from chess move history to side trays
+    const history = chess.history({ verbose: true });
+    let blackCapCount = 0;
+    let whiteCapCount = 0;
+    history.forEach((m, idx) => {
+      if (m.captured) {
+        const capColor: 'w' | 'b' = m.color === 'w' ? 'b' : 'w';
+        const trayIndex = capColor === 'b' ? blackCapCount++ : whiteCapCount++;
+        const slot = getTraySlotCoords(capColor, trayIndex);
+        list.push({
+          id: `captured_${idx}_${capColor}${m.captured}_${trayIndex}`,
+          square: `tray-${capColor}-${trayIndex}`,
+          type: m.captured,
+          color: capColor,
+          toX: slot.x,
+          toZ: slot.z,
+          captured: true,
+          trayIndex,
+          targetScale: 0.65,
+        });
+      }
+    });
+
     setPieces(list);
   }, [chess]);
 
@@ -436,9 +478,12 @@ export default function App() {
             ? move.to
             : null;
 
-          setPieces((prev) =>
-            prev.map((p) => {
-              if (p.square === from) {
+          setPieces((prev) => {
+            const capturedColor: 'w' | 'b' = move.color === 'w' ? 'b' : 'w';
+            const currentCapCount = prev.filter((p) => p.captured && p.color === capturedColor).length;
+
+            return prev.map((p) => {
+              if (p.square === from && !p.captured) {
                 return {
                   ...p,
                   square: to,
@@ -453,7 +498,7 @@ export default function App() {
                   arcHeight: isKnight ? 1.25 : 0.55,
                 };
               }
-              if (castlingRookFrom && p.square === castlingRookFrom) {
+              if (castlingRookFrom && p.square === castlingRookFrom && !p.captured) {
                 const rFrom = squareToCoords(castlingRookFrom);
                 const rTo = squareToCoords(castlingRookTo!);
                 return {
@@ -469,17 +514,30 @@ export default function App() {
                   arcHeight: 0.45,
                 };
               }
-              if (capturedSquare && p.square === capturedSquare) {
+              if (capturedSquare && p.square === capturedSquare && !p.captured) {
+                const capCoords = squareToCoords(capturedSquare);
+                const slot = getTraySlotCoords(capturedColor, currentCapCount);
                 return {
                   ...p,
-                  isFading: true,
-                  fadeStartTime: now,
-                  fadeDuration: 250,
+                  captured: true,
+                  trayIndex: currentCapCount,
+                  square: `tray-${capturedColor}-${currentCapCount}`,
+                  fromX: capCoords.x,
+                  fromZ: capCoords.z,
+                  toX: slot.x,
+                  toZ: slot.z,
+                  animating: true,
+                  animStartTime: now + 120,
+                  animDuration: 650,
+                  arcHeight: 1.4,
+                  fromScale: 1.0,
+                  targetScale: 0.65,
+                  isFading: false,
                 };
               }
               return p;
-            })
-          );
+            });
+          });
 
           if (move.captured) {
             chessAudio.playCapture();
@@ -535,6 +593,60 @@ export default function App() {
     const minDelay = aiHumanDelay(difficulty);
     const isStale = () => currentJobId !== aiJobIdRef.current;
 
+    if (difficulty === 'extreme') {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 6500);
+
+      fetch('/api/ai/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fen: chess.fen(),
+          moveHistory,
+          legalMoves: chess.moves({ verbose: false }),
+          sideToMove: chess.turn() === 'w' ? 'White' : 'Black',
+        }),
+        signal: controller.signal,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          window.clearTimeout(timeoutId);
+          if (isStale()) return;
+
+          if (data.move && !data.fallbackNeeded) {
+            const testMove = chess.move(data.move);
+            if (testMove) {
+              chess.undo();
+              const wait = Math.max(0, minDelay - (performance.now() - startedAt));
+              window.setTimeout(() => {
+                if (isStale()) return;
+                setIsAIThinking(false);
+                executeMove(testMove.from, testMove.to);
+              }, wait);
+              return;
+            }
+          }
+          fallbackLocal();
+        })
+        .catch((_err) => {
+          window.clearTimeout(timeoutId);
+          if (!isStale()) fallbackLocal();
+        });
+
+      function fallbackLocal() {
+        askAI(chess.fen(), 'extreme', getPositionHistory(), 'move', currentJobId, isStale).then((aiMove) => {
+          if (isStale()) return;
+          const wait = Math.max(0, minDelay - (performance.now() - startedAt));
+          window.setTimeout(() => {
+            if (isStale()) return;
+            setIsAIThinking(false);
+            if (aiMove) executeMove(aiMove.from, aiMove.to);
+          }, wait);
+        });
+      }
+      return;
+    }
+
     askAI(chess.fen(), difficulty, getPositionHistory(), 'move', currentJobId, isStale).then((aiMove) => {
       if (isStale()) return;
       // never answer faster than a person would; a long search has already taken its time
@@ -545,29 +657,36 @@ export default function App() {
         if (aiMove) executeMove(aiMove.from, aiMove.to);
       }, wait);
     });
-  }, [appMode, chess, difficulty, executeMove, gameOver.isOver, playerActualColor, askAI, getPositionHistory]);
+  }, [appMode, chess, difficulty, executeMove, gameOver.isOver, playerActualColor, askAI, getPositionHistory, moveHistory]);
 
   const handleAnimationComplete = useCallback(
-    (_id: string) => {
-      isAnimatingRef.current = false;
-      const nextFen = chess.fen();
-      setFen(nextFen);
+    (id: string) => {
+      setPieces((prev) => {
+        const updated = prev.map((p) => (p.id === id ? { ...p, animating: false } : p));
+        const stillAnimating = updated.some((p) => p.animating);
+        if (!stillAnimating) {
+          isAnimatingRef.current = false;
+          const nextFen = chess.fen();
+          setFen(nextFen);
 
-      const isFinished = checkGameOverStatus();
-      if (!isFinished) {
-        if (chess.isCheck()) {
-          chessAudio.playCheck();
+          const isFinished = checkGameOverStatus();
+          if (!isFinished) {
+            if (chess.isCheck()) {
+              chessAudio.playCheck();
+            }
+            if (appMode === 'ai' && chess.turn() !== playerActualColor) {
+              triggerAIMove();
+            }
+          }
         }
-        if (appMode === 'ai' && chess.turn() !== playerActualColor) {
-          triggerAIMove();
-        }
-      }
+        return updated;
+      });
     },
     [chess, checkGameOverStatus, appMode, playerActualColor, triggerAIMove]
   );
 
   const handleFadeComplete = useCallback((id: string) => {
-    setPieces((prev) => prev.filter((p) => p.id !== id));
+    setPieces((prev) => prev.filter((p) => p.id !== id || p.captured));
   }, []);
 
   const setCursor = useCallback((pointer: boolean) => {
@@ -577,7 +696,7 @@ export default function App() {
   // Piece Click handler
   const handlePieceClick = useCallback(
     (piece: ActivePiece, e: any) => {
-      if (!gameStarted || gameOver.isOver || isAIThinking || isAnimatingRef.current || isDragMovement(e)) {
+      if (!gameStarted || gameOver.isOver || isAIThinking || isAnimatingRef.current || isDragMovement(e) || piece.captured) {
         return;
       }
       if (appMode === 'ai' && chess.turn() !== playerActualColor) return;
@@ -620,7 +739,7 @@ export default function App() {
 
   const handlePiecePointerEnter = useCallback(
     (piece: ActivePiece) => {
-      if (!gameStarted) return;
+      if (!gameStarted || piece.captured) return;
       const isPlayerTurn = appMode === 'pvp' || chess.turn() === playerActualColor;
       if (isPlayerTurn && (piece.color === turn || (selectedSquare && legalMoves.includes(piece.square)))) {
         setCursor(true);
@@ -856,8 +975,8 @@ export default function App() {
             shadow-mapSize={[1024, 1024]}
             shadow-camera-near={0.5}
             shadow-camera-far={45}
-            shadow-camera-left={-12}
-            shadow-camera-right={12}
+            shadow-camera-left={-14}
+            shadow-camera-right={14}
             shadow-camera-top={12}
             shadow-camera-bottom={-12}
             shadow-bias={-0.0001}
@@ -872,7 +991,7 @@ export default function App() {
             frames={1}
             position={[0, -0.23, 0]}
             opacity={0.55}
-            scale={22}
+            scale={26}
             blur={2.0}
             far={4}
             resolution={512}
@@ -914,10 +1033,9 @@ export default function App() {
           {/* Active 3D Model Set Piece Layer */}
           <Suspense fallback={null}>
             <PiecesLayer
-              key={`${activeModelSet.id}-${useOriginalMaterials ? 'orig' : activeTheme.id}`}
+              key={`${activeModelSet.id}-${activeTheme.id}`}
               modelSet={activeModelSet}
               theme={activeTheme}
-              useOriginalMaterials={useOriginalMaterials}
               pieceColors={pieceColors}
               knightYawOverride={
                 knightYawBySet[activeModelSet.id] !== undefined
@@ -1024,8 +1142,18 @@ export default function App() {
             </button>
           </div>
 
-          {/* Right Action Controls: Theme Studio & Audio Mute */}
+          {/* Right Action Controls: Gemini AI Chat, Theme Studio & Audio Mute */}
           <div className="pointer-events-auto flex items-center space-x-2.5">
+            <button
+              onClick={() => setShowGeminiChat(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-semibold transition shadow-2xl"
+              title="Chat with Grandmaster Garry (Gemini AI)"
+            >
+              <Bot className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Grandmaster AI</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </button>
+
             <button
               onClick={() => setShowThemeDrawer((prev) => !prev)}
               className={`flex items-center space-x-2 px-3.5 py-2 rounded-2xl border text-xs font-semibold transition shadow-2xl ${
@@ -1097,6 +1225,18 @@ export default function App() {
                 </span>
               )}
             </div>
+
+            {!showModeModal && (
+              <>
+                <div className="h-4 w-[1px] bg-neutral-700 mx-1 hidden sm:[@media(pointer:fine)]:block" />
+                <div
+                  className="hidden sm:[@media(pointer:fine)]:flex items-center px-2 py-0.5 rounded-lg bg-neutral-800/80 border border-neutral-700/50 text-xs font-mono text-neutral-300 whitespace-nowrap"
+                  title="Square under cursor"
+                >
+                  <span>{hoveredReadout}</span>
+                </div>
+              </>
+            )}
           </div>
         </footer>
 
@@ -1210,20 +1350,6 @@ export default function App() {
                     );
                   })}
                 </div>
-
-                {/* Option: Original Materials Toggle */}
-                <label className="flex items-center justify-between p-2 rounded-xl bg-neutral-800/50 border border-neutral-700/60 cursor-pointer text-xs">
-                  <div className="flex items-center space-x-2">
-                    <Layers className="w-3.5 h-3.5 text-amber-400" />
-                    <span className="text-neutral-300">Original materials (Keep embedded GLB textures)</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={useOriginalMaterials}
-                    onChange={(e) => setUseOriginalMaterials(e.target.checked)}
-                    className="accent-amber-500 w-4 h-4 cursor-pointer"
-                  />
-                </label>
 
                 {/* Option: knight facing (fixes models whose horse faces sideways/backwards) */}
                 <div className="p-2 rounded-xl bg-neutral-800/50 border border-neutral-700/60 text-xs space-y-1.5">
@@ -1394,11 +1520,6 @@ export default function App() {
                     </button>
                   )}
                 </div>
-                {useOriginalMaterials && (
-                  <p className="text-[10px] text-neutral-500">
-                    "Original materials" is on, so these colors are not applied. Turn it off to use them.
-                  </p>
-                )}
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <span className="text-[10px] text-neutral-400 block mb-1">White Pieces</span>
@@ -1588,7 +1709,7 @@ export default function App() {
                       Black Side
                     </button>
                     <button
-                      onClick={() => triggerCameraTransition(new THREE.Vector3(0, 20, 0.01))}
+                      onClick={() => triggerCameraTransition(new THREE.Vector3(0, 24, 0.01))}
                       className="py-1.5 px-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-700 border border-neutral-700 text-neutral-300 text-[11px] font-medium transition text-center"
                     >
                       Top-Down
@@ -1732,6 +1853,15 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* GEMINI GRANDMASTER CHATBOT MODAL */}
+        <GeminiChatModal
+          isOpen={showGeminiChat}
+          onClose={() => setShowGeminiChat(false)}
+          currentFen={chess.fen()}
+          moveHistory={moveHistory}
+          difficulty={difficulty}
+        />
       </div>
     </div>
   );

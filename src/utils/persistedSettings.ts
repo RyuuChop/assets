@@ -9,7 +9,7 @@ export const STORAGE_KEY = 'grandmaster_3d_theme_settings_v4';
 export interface PersistedSettings {
   themeId: string;
   modelSetId: string;
-  useOriginalMaterials: boolean;
+  useOriginalMaterials?: boolean;
   board: BoardStyleConfig;
   envPreset: EnvironmentPresetKey;
   showCoordinates: boolean;
