@@ -1,8 +1,0 @@
-{
-  "name": "Grandmaster 3D Chess Studio",
-  "description": "An interactive 3D chess game and model studio featuring imported GLB chess sets, dynamic lighting, intelligent AI opponent, smooth move animations, and asset inspection.",
-  "permissions": [],
-  "capabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
